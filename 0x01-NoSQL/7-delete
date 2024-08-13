@@ -1,0 +1,2 @@
+// Task 7 - Deletes all documents with specific attribute in collection.
+db.school.deleteMany({name: "Holberton school"});
