@@ -1,36 +1,34 @@
 #!/usr/bin/env python3
 """
-web cache and tracker
+web cach and tracker
 """
 import requests
-import redis
+import time
 from functools import wraps
 
-store = redis.Redis()
+cache = {}
 
+def cache_result(ttl=10):  # 10 seconds default TTL
+    def decorator(func):
+        def wrapper(url):
+            cache_key = f"result:{url}"
+            count_key = f"count:{url}"
+            if cache_key in cache and time.time() - cache[cache_key][0] < ttl:
+                return cache[cache_key][1]
+            result = func(url)
+            cache[cache_key] = (time.time(), result)
+            cache[count_key] = cache.get(count_key, 0) + 1
+            return result
+        return wrapper
+    return decorator
 
-def count_url_access(method):
-    """ Decorator counting how many times
-    a URL is accessed """
-    @wraps(method)
-    def wrapper(url):
-        cached_key = "cached:" + url
-        cached_data = store.get(cached_key)
-        if cached_data:
-            return cached_data.decode("utf-8")
-
-        count_key = "count:" + url
-        html = method(url)
-
-        store.incr(count_key)
-        store.set(cached_key, html)
-        store.expire(cached_key, 10)
-        return html
-    return wrapper
-
-
-@count_url_access
+@cache_result()
 def get_page(url: str) -> str:
-    """ Returns HTML content of a url """
-    res = requests.get(url)
-    return res.text
+    response = requests.get(url)
+    response.raise_for_status()
+    return response.text
+
+# Example usage:
+print(get_page("http://slowwly.robertomurray.co.uk"))
+print(get_page("http://slowwly.robertomurray.co.uk"))
+print(cache["count:http://slowwly.robertomurray.co.uk"])
