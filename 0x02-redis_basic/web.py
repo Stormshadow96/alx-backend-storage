@@ -1,34 +1,47 @@
 #!/usr/bin/env python3
 """
-web cach and tracker
+Module: Request caching and tracking tools
 """
+import redis
 import requests
-import time
 from functools import wraps
+from typing import Callable, Any, List, Dict
 
-cache = {}
 
-def cache_result(ttl=10):  # 10 seconds default TTL
-    def decorator(func):
-        def wrapper(url):
-            cache_key = f"result:{url}"
-            count_key = f"count:{url}"
-            if cache_key in cache and time.time() - cache[cache_key][0] < ttl:
-                return cache[cache_key][1]
-            result = func(url)
-            cache[cache_key] = (time.time(), result)
-            cache[count_key] = cache.get(count_key, 0) + 1
+redis_store = redis.Redis(host='localhost', port=6379, db=0)
+'''The module-level Redis instance.
+'''
+
+
+def data_cacher(ttl: int = 10) -> Callable:
+    """
+    Caches the output of fetched data for a specified TTL.
+    """
+    def decorator(method: Callable) -> Callable:
+        @wraps(method)
+        def invoker(url: str) -> str:
+            """
+            The wrapper function for caching the output.
+            """
+            redis_store.incr(f'count:{url}')
+            result = redis_store.get(f'result:{url}')
+            if result:
+                return result.decode('utf-8')
+            result = method(url)
+            redis_store.setex(f'result:{url}', ttl, result)
             return result
-        return wrapper
+        return invoker
     return decorator
 
-@cache_result()
-def get_page(url: str) -> str:
-    response = requests.get(url)
-    response.raise_for_status()
-    return response.text
 
-# Example usage:
-print(get_page("http://slowwly.robertomurray.co.uk"))
-print(get_page("http://slowwly.robertomurray.co.uk"))
-print(cache["count:http://slowwly.robertomurray.co.uk"])
+@data_cacher(ttl=10)
+def get_page(url: str) -> str:
+    """
+    Returns content of URL after caching request's
+    response, and tracking request.
+    """
+    return requests.get(url).text
+
+
+if __name__ == '__main__':
+    print(get_page('https://www.example.com'))
